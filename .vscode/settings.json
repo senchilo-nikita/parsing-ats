@@ -1,0 +1,3 @@
+{
+    "dotnet.defaultSolution": "dags\\smtp_sender_script\\smtp_sender_script.sln"
+}

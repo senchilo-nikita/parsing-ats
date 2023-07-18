@@ -1,0 +1,96 @@
+version: '3.10'
+
+x-airflow-config: &airflow-config
+  AIRFLOW__CORE__DAGS_FOLDER: /dags
+  AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+  AIRFLOW__CORE__FERNET_KEY: MJNz36Q8222VOQhBOmBROFrmeSxNOgTCMaVp2_HOtE0=
+  AIRFLOW__CORE__HOSTNAME_CALLABLE: airflow.utils.net:get_host_ip_address
+  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgres+psycopg2://airflow:airflow@airflow-db:5432/airflow
+
+  AIRFLOW__CORE__PARALLELISM: 128
+  AIRFLOW__CORE__DAG_CONCURRENCY: 16
+  AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 4
+  AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+  AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: 'False'
+
+  AIRFLOW__EMAIL__DEFAULT_EMAIL_ON_RETRY: 'False'
+  AIRFLOW__EMAIL__DEFAULT_EMAIL_ON_FAILURE: 'False'
+
+  AIRFLOW__CELERY__BROKER_URL: redis://broker:6379/0
+  AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@airflow-db/airflow
+
+x-airflow-base: &airflow-base
+  image: apache/airflow:1.10.15-python3.7
+  entrypoint: /bin/bash
+  restart: always
+  volumes:
+    - ./dags:/dags
+    - ./requirements.txt:/requirements.txt
+  environment:
+    TZ: 'Europe/Moscow'
+
+services:
+  # Redis as a Celery broker
+  broker:
+    image: redis:6.0.5-alpine
+
+  # DB for the Airflow metadata
+  airflow-db:
+    image: postgres:10.13-alpine
+
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+
+    volumes:
+      - ./db:/var/lib/postgresql/data
+
+  # Main container with Airflow Webserver, Scheduler, Celery Flower
+  airflow:
+    <<: *airflow-base
+
+    environment:
+      <<: *airflow-config
+
+      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
+      AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT: 'False'
+      AIRFLOW__SCHEDULER__MAX_THREADS: 8
+
+      AIRFLOW__WEBSERVER__LOG_FETCH_TIMEOUT_SEC: 10
+
+    depends_on:
+      - airflow-db
+      - broker
+
+    command: >
+      -c " sleep 10 &&
+           pip install --user -r /requirements.txt &&
+           /entrypoint initdb &&
+          (/entrypoint webserver &) &&
+          (/entrypoint flower &) &&
+           /entrypoint scheduler"
+
+    ports:
+      # Celery Flower
+      - 5555:5555
+      # Airflow Webserver
+      - 8080:8080
+
+  # Celery worker, will be scaled using `--scale=n`
+  worker:
+    <<: *airflow-base
+
+    environment:
+      <<: *airflow-config
+
+    command: >
+      -c " sleep 10 &&
+           pip install --user -r /requirements.txt &&
+           /entrypoint worker"
+
+    depends_on:
+      - airflow
+      - airflow-db
+      - broker
+
