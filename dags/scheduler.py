@@ -3,6 +3,7 @@ from update_data_scripts.producers_types import producers_types_update
 from update_data_scripts.overflows_zsp import overflows_zsp_update
 from update_data_scripts.market_zsp_report import market_zsp_report_update
 from update_data_scripts.prices_RSV_kvadra import update_kvadra_prices
+from update_data_scripts.vsvgo_gen_equip import vsvgo_upload_data
 import datetime
 from airflow.models import DAG
 from airflow.operators.python_operator import PythonOperator
@@ -47,6 +48,9 @@ with DAG(dag_id='dag_update_data', description='Update data for forecast',
     market_report_operator = PythonOperator(task_id='market_report_task', 
                                             python_callable=market_zsp_report_update, 
                                             dag=dag)
+    vsvgo_gen_operator = PythonOperator(task_id='vsvgo_gen_task', 
+                                            python_callable=vsvgo_upload_data, 
+                                            dag=dag)
 
-    lukoil_prices_operator >> kvadra_prices_operator >> producers_types_operator >> overflows_zsp_operator >> market_report_operator
+    lukoil_prices_operator >> kvadra_prices_operator >> vsvgo_gen_operator >> producers_types_operator >> overflows_zsp_operator >> market_report_operator
 
